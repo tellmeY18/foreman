@@ -35,12 +35,10 @@ services:
   orchestrator:
     <<: *app_base
     command: ${ORCHESTRATOR_COMMAND}
-    ports: []
-
+    
   worker:
     <<: *app_base
     command: ${WORKER_COMMAND}
-    ports: []
 
   redis-cache:
     image: ${REDIS_CACHE_IMAGE}
