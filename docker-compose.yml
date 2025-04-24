@@ -3,9 +3,6 @@ version: '3.4'
 services:
   db:
     image: ${POSTGRES_IMAGE}
-    hostname: ${DB_HOSTNAME}
-    env_file:
-      - .env.db
     ports:
       - "${DB_BIND_ADDRESS}:${DB_PORT}"
     restart: always
@@ -22,9 +19,6 @@ services:
     build:
       context: .
     command: ${APP_COMMAND}
-    hostname: ${APP_HOSTNAME}
-    env_file:
-      - .env.app
     links:
       - db
       - redis-cache
@@ -41,15 +35,11 @@ services:
   orchestrator:
     <<: *app_base
     command: ${ORCHESTRATOR_COMMAND}
-    env_file:
-      - .env.orchestrator
     ports: []
 
   worker:
     <<: *app_base
     command: ${WORKER_COMMAND}
-    env_file:
-      - .env.worker
     ports: []
 
   redis-cache:
