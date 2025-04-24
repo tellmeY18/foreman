@@ -1,70 +1,63 @@
 version: '3.4'
+
 services:
   db:
-    environment:
-      - POSTGRES_USER=foreman
-      - POSTGRES_PASSWORD=foreman
-      - POSTGRES_DATABASE=foreman
-      - PGDATA=/var/lib/postgresql/data/pgdata
-    hostname: db.example.com
-    image: postgres:12
+    image: ${POSTGRES_IMAGE}
+    hostname: ${DB_HOSTNAME}
+    env_file:
+      - .env.db
     ports:
-      - '5432'
+      - "${DB_BIND_ADDRESS}:${DB_PORT}"
     restart: always
     healthcheck:
-      test: ["CMD-SHELL", "nc -z 127.0.0.1 5432 || exit 1"]
-      interval: 30s
-      timeout: 30s
-      retries: 3
+      test: ["CMD-SHELL", "nc -z ${DB_HEALTHCHECK_HOST} ${DB_HEALTHCHECK_PORT} || exit 1"]
+      interval: ${DB_HEALTHCHECK_INTERVAL}
+      timeout: ${DB_HEALTHCHECK_TIMEOUT}
+      retries: ${DB_HEALTHCHECK_RETRIES}
     volumes:
       - db:/var/lib/postgresql/data
 
   app: &app_base
-    image: quay.io/foreman/foreman:develop
-    command: bundle exec bin/rails server -b 0.0.0.0
+    image: ${FOREMAN_IMAGE}
     build:
       context: .
-    environment:
-      - DATABASE_URL=postgres://foreman:foreman@db/foreman?pool=5
-      - RAILS_MAX_THREADS=5
-      - RAILS_ENV=production
-      - FOREMAN_FQDN=foreman.example.com
-      - FOREMAN_DOMAIN=example.com
-      - FOREMAN_RAILS_CACHE_STORE_TYPE=redis
-      - FOREMAN_RAILS_CACHE_STORE_URLS=redis://redis-cache:6379/0
-      - DYNFLOW_REDIS_URL=redis://redis-tasks:6379/0
-      - REDIS_PROVIDER=DYNFLOW_REDIS_URL
-    hostname: foreman.example.com
+    command: ${APP_COMMAND}
+    hostname: ${APP_HOSTNAME}
+    env_file:
+      - .env.app
     links:
       - db
       - redis-cache
       - redis-tasks
     ports:
-      - "${MY_DOCKER_IP:-127.0.0.1}:3000:3000"
-      - "${MY_DOCKER_IP:-127.0.0.1}:5910-5930:5910-5930"
+      - "${APP_BIND_ADDRESS}:${APP_HTTP_PORT}"
+      - "${APP_BIND_ADDRESS}:${APP_SSH_START}-${APP_SSH_END}"
     restart: always
     healthcheck:
-      test: ["CMD-SHELL", "nc -z 127.0.0.1 3000 || exit 1"]
-      interval: 5m
-      start_period: 1m
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 ${APP_HTTP_PORT} || exit 1"]
+      interval: ${APP_HEALTHCHECK_INTERVAL}
+      start_period: ${APP_HEALTHCHECK_START_PERIOD}
 
   orchestrator:
     <<: *app_base
-    command: bundle exec sidekiq -r ./extras/dynflow-sidekiq.rb -c 1 -q dynflow_orchestrator
-    hostname: orchestrator.example.com
+    command: ${ORCHESTRATOR_COMMAND}
+    env_file:
+      - .env.orchestrator
     ports: []
 
   worker:
     <<: *app_base
-    command: bundle exec sidekiq -r ./extras/dynflow-sidekiq.rb -c 15 -q default,1 -q remote_execution,1
+    command: ${WORKER_COMMAND}
+    env_file:
+      - .env.worker
     ports: []
 
   redis-cache:
-    image: redis
+    image: ${REDIS_CACHE_IMAGE}
 
   redis-tasks:
-    image: redis
-    command: redis-server --appendonly yes
+    image: ${REDIS_TASKS_IMAGE}
+    command: ${REDIS_TASKS_COMMAND}
     volumes:
       - redis-persistent:/data
 
