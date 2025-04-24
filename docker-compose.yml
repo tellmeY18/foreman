@@ -1,10 +1,8 @@
-version: '3.4'
+version: '3.8'
 
 services:
   db:
     image: ${POSTGRES_IMAGE}
-    ports:
-      - "${DB_BIND_ADDRESS}:${DB_PORT}"
     restart: always
     healthcheck:
       test: ["CMD-SHELL", "nc -z ${DB_HEALTHCHECK_HOST} ${DB_HEALTHCHECK_PORT} || exit 1"]
@@ -12,33 +10,10 @@ services:
       timeout: ${DB_HEALTHCHECK_TIMEOUT}
       retries: ${DB_HEALTHCHECK_RETRIES}
     volumes:
-      - db:/var/lib/postgresql/data
-
-  app: &app_base
-    image: ${FOREMAN_IMAGE}
-    build:
-      context: .
-    command: ${APP_COMMAND}
-    links:
-      - db
-      - redis-cache
-      - redis-tasks
-    ports:
-      - "${APP_BIND_ADDRESS}:${APP_HTTP_PORT}"
-      - "${APP_BIND_ADDRESS}:${APP_SSH_START}-${APP_SSH_END}"
-    restart: always
-    healthcheck:
-      test: ["CMD-SHELL", "nc -z 127.0.0.1 ${APP_HTTP_PORT} || exit 1"]
-      interval: ${APP_HEALTHCHECK_INTERVAL}
-      start_period: ${APP_HEALTHCHECK_START_PERIOD}
-
-  orchestrator:
-    <<: *app_base
-    command: ${ORCHESTRATOR_COMMAND}
-    
-  worker:
-    <<: *app_base
-    command: ${WORKER_COMMAND}
+      - type: bind
+        source: ./data/db
+        target: /var/lib/postgresql/data
+        is_directory: true
 
   redis-cache:
     image: ${REDIS_CACHE_IMAGE}
@@ -47,8 +22,35 @@ services:
     image: ${REDIS_TASKS_IMAGE}
     command: ${REDIS_TASKS_COMMAND}
     volumes:
-      - redis-persistent:/data
+      - type: bind
+        source: ./data/redis
+        target: /data
+        is_directory: true
 
-volumes:
-  db:
-  redis-persistent:
+  app: &app_base
+    image: ${FOREMAN_IMAGE}
+    build:
+      context: .
+    command: ${APP_COMMAND}
+    depends_on:
+      - db
+      - redis-cache
+      - redis-tasks
+    # expose only the container port; Coolify proxy will handle host routing
+    expose:
+      - "${APP_HTTP_PORT}"
+    labels:
+      - traefik.enable=true
+      - "traefik.http.routers.foreman.rule=Host(`${APP_HOST}`)"
+      - "traefik.http.routers.foreman.entryPoints=http,https"
+      - "traefik.http.services.foreman.loadbalancer.server.port=${APP_HTTP_PORT}"
+
+  orchestrator:
+    <<: *app_base
+    command: ${ORCHESTRATOR_COMMAND}
+
+  worker:
+    <<: *app_base
+    command: ${WORKER_COMMAND}
+
+# no top-level volumes section needed when using host binds
